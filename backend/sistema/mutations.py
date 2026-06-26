@@ -371,6 +371,98 @@ class CambiarPassword(graphene.Mutation):
             return CambiarPassword(ok=True)
         except Usuario.DoesNotExist:
             return CambiarPassword(ok=False, error='Usuario no encontrado')
+        
+
+class ActualizarEquipo(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        nombre = graphene.String()
+        marca = graphene.String()
+        modelo = graphene.String()
+        numero_serie = graphene.String()
+        tipo_equipo_id = graphene.Int()
+        ubicacion_id = graphene.Int()
+        estado = graphene.String()
+
+    equipo = graphene.Field(EquipoType)
+
+    def mutate(root, info, id, nombre=None, marca=None, modelo=None,
+               numero_serie=None, tipo_equipo_id=None, ubicacion_id=None, estado=None):
+        equipo = Equipo.objects.get(pk=id)
+        if nombre: equipo.nombre = nombre
+        if marca is not None: equipo.marca = marca
+        if modelo is not None: equipo.modelo = modelo
+        if numero_serie is not None: equipo.numero_serie = numero_serie
+        if tipo_equipo_id: equipo.tipo_equipo = TipoEquipo.objects.get(pk=tipo_equipo_id)
+        if ubicacion_id: equipo.ubicacion = Ubicacion.objects.get(pk=ubicacion_id)
+        if estado: equipo.estado = estado
+        equipo.save()
+        return ActualizarEquipo(equipo=equipo)
+
+
+# ── ACTUALIZAR ORDEN DE TRABAJO ───────────────────────
+class ActualizarOrdenTrabajo(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        descripcion_falla = graphene.String()
+        prioridad = graphene.String()
+        estado = graphene.String()
+        tecnico_id = graphene.Int()
+
+    orden = graphene.Field(OrdenTrabajoType)
+
+    def mutate(root, info, id, descripcion_falla=None, prioridad=None, estado=None, tecnico_id=None):
+        orden = OrdenTrabajo.objects.get(pk=id)
+        if descripcion_falla: orden.descripcion_falla = descripcion_falla
+        if prioridad: orden.prioridad = prioridad
+        if estado: orden.estado = estado
+        if tecnico_id: orden.tecnico = Usuario.objects.get(pk=tecnico_id)
+        orden.save()
+        return ActualizarOrdenTrabajo(orden=orden)
+
+
+class EliminarOrdenTrabajo(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+
+    ok = graphene.Boolean()
+
+    def mutate(root, info, id):
+        OrdenTrabajo.objects.filter(pk=id).delete()
+        return EliminarOrdenTrabajo(ok=True)
+
+
+# ── ACTUALIZAR USUARIO ────────────────────────────────
+class ActualizarUsuario(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+        nombre = graphene.String()
+        email = graphene.String()
+        rol_id = graphene.Int()
+        activo = graphene.Boolean()
+
+    usuario = graphene.Field(UsuarioType)
+
+    def mutate(root, info, id, nombre=None, email=None, rol_id=None, activo=None):
+        usuario = Usuario.objects.get(pk=id)
+        if nombre: usuario.nombre = nombre
+        if email: usuario.email = email
+        if rol_id: usuario.rol = Rol.objects.get(pk=rol_id)
+        if activo is not None: usuario.activo = activo
+        usuario.save()
+        return ActualizarUsuario(usuario=usuario)
+
+
+# ── ELIMINAR MANTENIMIENTO ────────────────────────────
+class EliminarMantenimientoPreventivo(graphene.Mutation):
+    class Arguments:
+        id = graphene.Int(required=True)
+
+    ok = graphene.Boolean()
+
+    def mutate(root, info, id):
+        MantenimientoPreventivo.objects.filter(pk=id).delete()
+        return EliminarMantenimientoPreventivo(ok=True)
 
 
 
@@ -421,3 +513,17 @@ class Mutation(graphene.ObjectType):
     # Auth
     login = Login.Field()
     cambiar_password = CambiarPassword.Field()
+
+    actualizar_equipo = ActualizarEquipo.Field()
+
+
+
+    # Ordenes
+    actualizar_orden_trabajo = ActualizarOrdenTrabajo.Field()
+    eliminar_orden_trabajo = EliminarOrdenTrabajo.Field()
+
+    # Usuarios
+    actualizar_usuario = ActualizarUsuario.Field()
+
+    # Mantenimiento
+    eliminar_mantenimiento_preventivo = EliminarMantenimientoPreventivo.Field()

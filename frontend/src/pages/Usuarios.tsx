@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { client } from '../lib/apollo'
 import { cls } from '../styles/common'
+import { Pencil, Trash2 } from 'lucide-react'
 
 const QUERY_USUARIOS = `
   query {
@@ -9,7 +10,6 @@ const QUERY_USUARIOS = `
       nombre
       email
       activo
-      createdAt
       rol { id nombre }
     }
     roles { id nombre }
@@ -28,6 +28,26 @@ const CREAR_USUARIO = `
       email: $email
       passwordHash: $passwordHash
       rolId: $rolId
+    ) {
+      usuario { id nombre }
+    }
+  }
+`
+
+const ACTUALIZAR_USUARIO = `
+  mutation ActualizarUsuario(
+    $id: Int!
+    $nombre: String
+    $email: String
+    $rolId: Int
+    $activo: Boolean
+  ) {
+    actualizarUsuario(
+      id: $id
+      nombre: $nombre
+      email: $email
+      rolId: $rolId
+      activo: $activo
     ) {
       usuario { id nombre }
     }
@@ -53,6 +73,7 @@ const formVacio = {
   email: '',
   password: '',
   rolId: '',
+  activo: true,
 }
 
 export default function Usuarios() {
@@ -61,6 +82,7 @@ export default function Usuarios() {
   const [loading, setLoading] = useState(true)
   const [mostrarModal, setMostrarModal] = useState(false)
   const [form, setForm] = useState(formVacio)
+  const [editando, setEditando] = useState<any | null>(null)
   const [guardando, setGuardando] = useState(false)
   const [eliminando, setEliminando] = useState<number | null>(null)
 
@@ -74,16 +96,42 @@ export default function Usuarios() {
 
   useEffect(() => { cargarDatos() }, [])
 
-  const handleGuardar = async () => {
-    if (!form.nombre || !form.email || !form.password || !form.rolId) return
-    setGuardando(true)
-    await client.request(CREAR_USUARIO, {
-      nombre: form.nombre,
-      email: form.email,
-      passwordHash: form.password,
-      rolId: parseInt(form.rolId),
+  const abrirEditar = (u: any) => {
+    setEditando(u)
+    setForm({
+      nombre: u.nombre,
+      email: u.email,
+      password: '',
+      rolId: u.rol?.id ?? '',
+      activo: u.activo,
     })
+    setMostrarModal(true)
+  }
+
+  const handleGuardar = async () => {
+    if (!form.nombre || !form.email || !form.rolId) return
+    setGuardando(true)
+
+    if (editando) {
+      await client.request(ACTUALIZAR_USUARIO, {
+        id: parseInt(editando.id),
+        nombre: form.nombre,
+        email: form.email,
+        rolId: parseInt(form.rolId),
+        activo: form.activo,
+      })
+    } else {
+      if (!form.password) return
+      await client.request(CREAR_USUARIO, {
+        nombre: form.nombre,
+        email: form.email,
+        passwordHash: form.password,
+        rolId: parseInt(form.rolId),
+      })
+    }
+
     setForm(formVacio)
+    setEditando(null)
     setMostrarModal(false)
     setGuardando(false)
     cargarDatos()
@@ -100,13 +148,13 @@ export default function Usuarios() {
   const cerrarModal = () => {
     setMostrarModal(false)
     setForm(formVacio)
+    setEditando(null)
   }
 
   if (loading) return <div className={cls.page}><p className="text-gray-400 text-sm">Cargando...</p></div>
 
   return (
     <div className={cls.page}>
-      {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
           <h2 className={cls.pageTitle}>Usuarios</h2>
@@ -169,13 +217,23 @@ export default function Usuarios() {
                     </span>
                   </td>
                   <td className={cls.tableCell}>
-                    <button
-                      className={cls.btnDanger}
-                      onClick={() => handleEliminar(u.id)}
-                      disabled={eliminando === u.id}
-                    >
-                      {eliminando === u.id ? 'Eliminando...' : 'Eliminar'}
-                    </button>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => abrirEditar(u)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                        title="Editar"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleEliminar(parseInt(u.id))}
+                        disabled={eliminando === parseInt(u.id)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -193,7 +251,9 @@ export default function Usuarios() {
         >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-gray-800 font-medium">Nuevo usuario</h3>
+              <h3 className="text-gray-800 font-medium">
+                {editando ? 'Editar usuario' : 'Nuevo usuario'}
+              </h3>
               <button onClick={cerrarModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
@@ -217,16 +277,18 @@ export default function Usuarios() {
                   placeholder="juan@sistema.com"
                 />
               </div>
-              <div>
-                <label className={cls.label}>Contraseña *</label>
-                <input
-                  type="password"
-                  className={cls.input}
-                  value={form.password}
-                  onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  placeholder="••••••••"
-                />
-              </div>
+              {!editando && (
+                <div>
+                  <label className={cls.label}>Contraseña *</label>
+                  <input
+                    type="password"
+                    className={cls.input}
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                    placeholder="••••••••"
+                  />
+                </div>
+              )}
               <div>
                 <label className={cls.label}>Rol *</label>
                 <select
@@ -240,11 +302,23 @@ export default function Usuarios() {
                   ))}
                 </select>
               </div>
+              {editando && (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="activo"
+                    checked={form.activo}
+                    onChange={(e) => setForm({ ...form, activo: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <label htmlFor="activo" className="text-gray-600 text-sm">Usuario activo</label>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3 mt-6">
               <button className={cls.btnPrimary} onClick={handleGuardar} disabled={guardando}>
-                {guardando ? 'Guardando...' : 'Crear usuario'}
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear usuario'}
               </button>
               <button className={cls.btnSecondary} onClick={cerrarModal}>Cancelar</button>
             </div>

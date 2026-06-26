@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { client } from '../lib/apollo'
 import { cls } from '../styles/common'
+import { Pencil, Trash2 } from 'lucide-react'
 
 const QUERY_ORDENES = `
   query {
@@ -37,10 +38,30 @@ const CREAR_ORDEN = `
   }
 `
 
-const ASIGNAR_TECNICO = `
-  mutation AsignarTecnicoOrden($id: Int!, $tecnicoId: Int!) {
-    asignarTecnicoOrden(id: $id, tecnicoId: $tecnicoId) {
-      orden { id estado }
+const ACTUALIZAR_ORDEN = `
+  mutation ActualizarOrdenTrabajo(
+    $id: Int!
+    $descripcionFalla: String
+    $prioridad: String
+    $estado: String
+    $tecnicoId: Int
+  ) {
+    actualizarOrdenTrabajo(
+      id: $id
+      descripcionFalla: $descripcionFalla
+      prioridad: $prioridad
+      estado: $estado
+      tecnicoId: $tecnicoId
+    ) {
+      orden { id }
+    }
+  }
+`
+
+const ELIMINAR_ORDEN = `
+  mutation EliminarOrdenTrabajo($id: Int!) {
+    eliminarOrdenTrabajo(id: $id) {
+      ok
     }
   }
 `
@@ -73,6 +94,8 @@ const formVacio = {
   solicitanteId: '',
   descripcionFalla: '',
   prioridad: 'media',
+  estado: 'abierta',
+  tecnicoId: '',
 }
 
 export default function Ordenes() {
@@ -82,7 +105,9 @@ export default function Ordenes() {
   const [loading, setLoading] = useState(true)
   const [mostrarModal, setMostrarModal] = useState(false)
   const [form, setForm] = useState(formVacio)
+  const [editando, setEditando] = useState<any | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [eliminando, setEliminando] = useState<number | null>(null)
   const [filtroEstado, setFiltroEstado] = useState('')
 
   const cargarDatos = () => {
@@ -96,24 +121,60 @@ export default function Ordenes() {
 
   useEffect(() => { cargarDatos() }, [])
 
-  const handleGuardar = async () => {
-    if (!form.equipoId || !form.solicitanteId || !form.descripcionFalla) return
-    setGuardando(true)
-    await client.request(CREAR_ORDEN, {
-      equipoId: parseInt(form.equipoId),
-      solicitanteId: parseInt(form.solicitanteId),
-      descripcionFalla: form.descripcionFalla,
-      prioridad: form.prioridad,
+  const abrirEditar = (orden: any) => {
+    setEditando(orden)
+    setForm({
+      equipoId: orden.equipo?.id ?? '',
+      solicitanteId: orden.solicitante?.id ?? '',
+      descripcionFalla: orden.descripcionFalla,
+      prioridad: orden.prioridad,
+      estado: orden.estado,
+      tecnicoId: orden.tecnico?.id ?? '',
     })
+    setMostrarModal(true)
+  }
+
+  const handleGuardar = async () => {
+    if (!form.descripcionFalla) return
+    setGuardando(true)
+
+    if (editando) {
+      await client.request(ACTUALIZAR_ORDEN, {
+        id: parseInt(editando.id),
+        descripcionFalla: form.descripcionFalla,
+        prioridad: form.prioridad,
+        estado: form.estado,
+        tecnicoId: form.tecnicoId ? parseInt(form.tecnicoId) : null,
+      })
+    } else {
+      if (!form.equipoId || !form.solicitanteId) return
+      await client.request(CREAR_ORDEN, {
+        equipoId: parseInt(form.equipoId),
+        solicitanteId: parseInt(form.solicitanteId),
+        descripcionFalla: form.descripcionFalla,
+        prioridad: form.prioridad,
+      })
+    }
+
     setForm(formVacio)
+    setEditando(null)
     setMostrarModal(false)
     setGuardando(false)
+    cargarDatos()
+  }
+
+  const handleEliminar = async (id: number) => {
+    if (!confirm('¿Seguro que deseas eliminar esta orden?')) return
+    setEliminando(id)
+    await client.request(ELIMINAR_ORDEN, { id })
+    setEliminando(null)
     cargarDatos()
   }
 
   const cerrarModal = () => {
     setMostrarModal(false)
     setForm(formVacio)
+    setEditando(null)
   }
 
   const ordenesFiltradas = ordenes.filter((o) =>
@@ -124,7 +185,6 @@ export default function Ordenes() {
 
   return (
     <div className={cls.page}>
-      {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
           <h2 className={cls.pageTitle}>Órdenes de trabajo</h2>
@@ -157,7 +217,7 @@ export default function Ordenes() {
         <table className={cls.table}>
           <thead>
             <tr>
-              {['#', 'Equipo', 'Descripción', 'Solicitante', 'Técnico', 'Prioridad', 'Estado', 'Fecha'].map((h) => (
+              {['#', 'Equipo', 'Descripción', 'Solicitante', 'Técnico', 'Prioridad', 'Estado', 'Acciones'].map((h) => (
                 <th key={h} className={cls.tableHeader}>{h}</th>
               ))}
             </tr>
@@ -199,7 +259,25 @@ export default function Ordenes() {
                       {estadoLabel[o.estado] || o.estado}
                     </span>
                   </td>
-                  <td className={cls.tableCell}>{o.fechaSolicitud}</td>
+                  <td className={cls.tableCell}>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => abrirEditar(o)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                        title="Editar"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleEliminar(parseInt(o.id))}
+                        disabled={eliminando === parseInt(o.id)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -216,50 +294,61 @@ export default function Ordenes() {
         >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-gray-800 font-medium">Nueva orden de trabajo</h3>
+              <h3 className="text-gray-800 font-medium">
+                {editando ? 'Editar orden' : 'Nueva orden de trabajo'}
+              </h3>
               <button onClick={cerrarModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className={cls.label}>Equipo *</label>
-                <select
-                  className={cls.input}
-                  value={form.equipoId}
-                  onChange={(e) => setForm({ ...form, equipoId: e.target.value })}
-                >
-                  <option value="">Seleccionar...</option>
-                  {equipos.map((e: any) => (
-                    <option key={e.id} value={e.id}>{e.nombre}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={cls.label}>Solicitante *</label>
-                <select
-                  className={cls.input}
-                  value={form.solicitanteId}
-                  onChange={(e) => setForm({ ...form, solicitanteId: e.target.value })}
-                >
-                  <option value="">Seleccionar...</option>
-                  {usuarios.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.nombre}</option>
-                  ))}
-                </select>
-              </div>
+              {!editando && (
+                <>
+                  <div>
+                    <label className={cls.label}>Equipo *</label>
+                    <select className={cls.input} value={form.equipoId} onChange={(e) => setForm({ ...form, equipoId: e.target.value })}>
+                      <option value="">Seleccionar...</option>
+                      {equipos.map((e: any) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={cls.label}>Solicitante *</label>
+                    <select className={cls.input} value={form.solicitanteId} onChange={(e) => setForm({ ...form, solicitanteId: e.target.value })}>
+                      <option value="">Seleccionar...</option>
+                      {usuarios.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
               <div>
                 <label className={cls.label}>Prioridad</label>
-                <select
-                  className={cls.input}
-                  value={form.prioridad}
-                  onChange={(e) => setForm({ ...form, prioridad: e.target.value })}
-                >
+                <select className={cls.input} value={form.prioridad} onChange={(e) => setForm({ ...form, prioridad: e.target.value })}>
                   <option value="baja">Baja</option>
                   <option value="media">Media</option>
                   <option value="alta">Alta</option>
                   <option value="critica">Crítica</option>
                 </select>
               </div>
+              {editando && (
+                <>
+                  <div>
+                    <label className={cls.label}>Estado</label>
+                    <select className={cls.input} value={form.estado} onChange={(e) => setForm({ ...form, estado: e.target.value })}>
+                      <option value="abierta">Abierta</option>
+                      <option value="asignada">Asignada</option>
+                      <option value="en_proceso">En proceso</option>
+                      <option value="cerrada">Cerrada</option>
+                      <option value="cancelada">Cancelada</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={cls.label}>Técnico asignado</label>
+                    <select className={cls.input} value={form.tecnicoId} onChange={(e) => setForm({ ...form, tecnicoId: e.target.value })}>
+                      <option value="">Sin asignar</option>
+                      {usuarios.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
               <div className="col-span-2">
                 <label className={cls.label}>Descripción de la falla *</label>
                 <textarea
@@ -274,7 +363,7 @@ export default function Ordenes() {
 
             <div className="flex gap-3 mt-6">
               <button className={cls.btnPrimary} onClick={handleGuardar} disabled={guardando}>
-                {guardando ? 'Guardando...' : 'Crear orden'}
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Crear orden'}
               </button>
               <button className={cls.btnSecondary} onClick={cerrarModal}>Cancelar</button>
             </div>

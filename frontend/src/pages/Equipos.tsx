@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { client } from '../lib/apollo'
 import { cls } from '../styles/common'
+import { Pencil, Trash2 } from 'lucide-react'
 
 const QUERY_EQUIPOS = `
   query {
@@ -11,8 +12,8 @@ const QUERY_EQUIPOS = `
       modelo
       numeroSerie
       estado
-      tipoEquipo { nombre }
-      ubicacion { nombre area }
+      tipoEquipo { id nombre }
+      ubicacion { id nombre area }
     }
     tiposEquipo { id nombre }
     ubicaciones { id nombre area }
@@ -30,6 +31,48 @@ const CREAR_EQUIPO = `
     $estado: String
   ) {
     crearEquipo(
+      nombre: $nombre
+      marca: $marca
+      modelo: $modelo
+      numeroSerie: $numeroSerie
+      tipoEquipoId: $tipoEquipoId
+      ubicacionId: $ubicacionId
+      estado: $estado
+    ) {
+      equipo { id nombre }
+    }
+  }
+`
+
+const ELIMINAR_EQUIPO = `
+  mutation EliminarEquipo($id: Int!) {
+    eliminarEquipo(id: $id) {
+      ok
+    }
+  }
+`
+
+const ACTUALIZAR_ESTADO_EQUIPO = `
+  mutation ActualizarEstadoEquipo($id: Int!, $estado: String!, $usuarioId: Int!) {
+    actualizarEstadoEquipo(id: $id, estado: $estado, usuarioId: $usuarioId) {
+      equipo { id estado }
+    }
+  }
+`
+
+const ACTUALIZAR_EQUIPO = `
+  mutation ActualizarEquipo(
+    $id: Int!
+    $nombre: String
+    $marca: String
+    $modelo: String
+    $numeroSerie: String
+    $tipoEquipoId: Int
+    $ubicacionId: Int
+    $estado: String
+  ) {
+    actualizarEquipo(
+      id: $id
       nombre: $nombre
       marca: $marca
       modelo: $modelo
@@ -74,7 +117,9 @@ export default function Equipos() {
   const [loading, setLoading] = useState(true)
   const [mostrarModal, setMostrarModal] = useState(false)
   const [form, setForm] = useState(formVacio)
+  const [editando, setEditando] = useState<any | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [eliminando, setEliminando] = useState<number | null>(null)
   const [busqueda, setBusqueda] = useState('')
 
   const cargarDatos = () => {
@@ -88,27 +133,67 @@ export default function Equipos() {
 
   useEffect(() => { cargarDatos() }, [])
 
+  const abrirEditar = (equipo: any) => {
+    setEditando(equipo)
+    setForm({
+      nombre: equipo.nombre,
+      marca: equipo.marca || '',
+      modelo: equipo.modelo || '',
+      numeroSerie: equipo.numeroSerie || '',
+      tipoEquipoId: equipo.tipoEquipo?.id ?? '',
+      ubicacionId: equipo.ubicacion?.id ?? '',
+      estado: equipo.estado,
+    })
+    setMostrarModal(true)
+  }
+
   const handleGuardar = async () => {
     if (!form.nombre || !form.tipoEquipoId) return
     setGuardando(true)
-    await client.request(CREAR_EQUIPO, {
-      nombre: form.nombre,
-      marca: form.marca,
-      modelo: form.modelo,
-      numeroSerie: form.numeroSerie,
-      tipoEquipoId: parseInt(form.tipoEquipoId),
-      ubicacionId: form.ubicacionId ? parseInt(form.ubicacionId) : null,
-      estado: form.estado,
-    })
+
+        if (editando) {
+      await client.request(ACTUALIZAR_EQUIPO, {
+        id: parseInt(editando.id),  // <- agregar parseInt aquí
+        nombre: form.nombre,
+        marca: form.marca,
+        modelo: form.modelo,
+        numeroSerie: form.numeroSerie,
+        tipoEquipoId: parseInt(form.tipoEquipoId),
+        ubicacionId: form.ubicacionId ? parseInt(form.ubicacionId) : null,
+        estado: form.estado,
+      })
+    }
+    else {
+      await client.request(CREAR_EQUIPO, {
+        nombre: form.nombre,
+        marca: form.marca,
+        modelo: form.modelo,
+        numeroSerie: form.numeroSerie,
+        tipoEquipoId: parseInt(form.tipoEquipoId),
+        ubicacionId: form.ubicacionId ? parseInt(form.ubicacionId) : null,
+        estado: form.estado,
+      })
+    }
+
     setForm(formVacio)
+    setEditando(null)
     setMostrarModal(false)
     setGuardando(false)
+    cargarDatos()
+  }
+
+  const handleEliminar = async (id: number) => {
+    if (!confirm('¿Seguro que deseas eliminar este equipo?')) return
+    setEliminando(id)
+    await client.request(ELIMINAR_EQUIPO, { id })
+    setEliminando(null)
     cargarDatos()
   }
 
   const cerrarModal = () => {
     setMostrarModal(false)
     setForm(formVacio)
+    setEditando(null)
   }
 
   const equiposFiltrados = equipos.filter((e) =>
@@ -147,7 +232,7 @@ export default function Equipos() {
         <table className={cls.table}>
           <thead>
             <tr>
-              {['Nombre', 'Tipo', 'Marca / Modelo', 'N° Serie', 'Ubicación', 'Estado'].map((h) => (
+              {['Nombre', 'Tipo', 'Marca / Modelo', 'N° Serie', 'Ubicación', 'Estado', 'Acciones'].map((h) => (
                 <th key={h} className={cls.tableHeader}>{h}</th>
               ))}
             </tr>
@@ -155,7 +240,7 @@ export default function Equipos() {
           <tbody>
             {equiposFiltrados.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-gray-300 text-sm py-8 text-center">
+                <td colSpan={7} className="text-gray-300 text-sm py-8 text-center">
                   No hay equipos registrados
                 </td>
               </tr>
@@ -178,6 +263,25 @@ export default function Equipos() {
                       {estadoLabel[e.estado] || e.estado}
                     </span>
                   </td>
+                  <td className={cls.tableCell}>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => abrirEditar(e)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                        title="Editar"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleEliminar(e.id)}
+                        disabled={eliminando === e.id}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))
             )}
@@ -194,13 +298,10 @@ export default function Equipos() {
         >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-gray-800 font-medium">Nuevo equipo</h3>
-              <button
-                onClick={cerrarModal}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
-              >
-                ×
-              </button>
+              <h3 className="text-gray-800 font-medium">
+                {editando ? 'Editar equipo' : 'Nuevo equipo'}
+              </h3>
+              <button onClick={cerrarModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -211,6 +312,7 @@ export default function Equipos() {
                   value={form.nombre}
                   onChange={(e) => setForm({ ...form, nombre: e.target.value })}
                   placeholder="Ej: PC Recepción"
+                  
                 />
               </div>
               <div>
@@ -219,11 +321,10 @@ export default function Equipos() {
                   className={cls.input}
                   value={form.tipoEquipoId}
                   onChange={(e) => setForm({ ...form, tipoEquipoId: e.target.value })}
+                  
                 >
                   <option value="">Seleccionar...</option>
-                  {tipos.map((t: any) => (
-                    <option key={t.id} value={t.id}>{t.nombre}</option>
-                  ))}
+                  {tipos.map((t: any) => <option key={t.id} value={t.id}>{t.nombre}</option>)}
                 </select>
               </div>
               <div>
@@ -233,6 +334,7 @@ export default function Equipos() {
                   value={form.marca}
                   onChange={(e) => setForm({ ...form, marca: e.target.value })}
                   placeholder="Ej: Dell"
+                 
                 />
               </div>
               <div>
@@ -242,6 +344,7 @@ export default function Equipos() {
                   value={form.modelo}
                   onChange={(e) => setForm({ ...form, modelo: e.target.value })}
                   placeholder="Ej: OptiPlex 7090"
+                  
                 />
               </div>
               <div>
@@ -251,6 +354,7 @@ export default function Equipos() {
                   value={form.numeroSerie}
                   onChange={(e) => setForm({ ...form, numeroSerie: e.target.value })}
                   placeholder="Ej: ABC123456"
+                  
                 />
               </div>
               <div>
@@ -259,11 +363,10 @@ export default function Equipos() {
                   className={cls.input}
                   value={form.ubicacionId}
                   onChange={(e) => setForm({ ...form, ubicacionId: e.target.value })}
+                  
                 >
                   <option value="">Seleccionar...</option>
-                  {ubicaciones.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.nombre} - {u.area}</option>
-                  ))}
+                  {ubicaciones.map((u: any) => <option key={u.id} value={u.id}>{u.nombre} - {u.area}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
@@ -281,17 +384,17 @@ export default function Equipos() {
               </div>
             </div>
 
+            {editando && (
+              <p className="text-gray-400 text-xs mt-3">
+                Solo se puede modificar el estado del equipo.
+              </p>
+            )}
+
             <div className="flex gap-3 mt-6">
-              <button
-                className={cls.btnPrimary}
-                onClick={handleGuardar}
-                disabled={guardando}
-              >
-                {guardando ? 'Guardando...' : 'Guardar equipo'}
+              <button className={cls.btnPrimary} onClick={handleGuardar} disabled={guardando}>
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Guardar equipo'}
               </button>
-              <button className={cls.btnSecondary} onClick={cerrarModal}>
-                Cancelar
-              </button>
+              <button className={cls.btnSecondary} onClick={cerrarModal}>Cancelar</button>
             </div>
           </div>
         </div>

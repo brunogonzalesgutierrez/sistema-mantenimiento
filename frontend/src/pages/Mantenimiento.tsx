@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { client } from '../lib/apollo'
 import { cls } from '../styles/common'
+import { Pencil, Trash2, PlayCircle, CheckCircle } from 'lucide-react'
 
 const QUERY_MANTENIMIENTO = `
   query {
@@ -14,7 +15,7 @@ const QUERY_MANTENIMIENTO = `
       tecnico { id nombre }
     }
     equipos { id nombre }
-    usuarios { id nombre rol { nombre } }
+    usuarios { id nombre }
   }
 `
 
@@ -54,6 +55,14 @@ const ACTUALIZAR_MANTENIMIENTO = `
   }
 `
 
+const ELIMINAR_MANTENIMIENTO = `
+  mutation EliminarMantenimientoPreventivo($id: Int!) {
+    eliminarMantenimientoPreventivo(id: $id) {
+      ok
+    }
+  }
+`
+
 const estadoColor: Record<string, string> = {
   programado: '#3B82F6',
   en_proceso: '#F59E0B',
@@ -73,6 +82,7 @@ const formVacio = {
   tecnicoId: '',
   fechaProgramada: '',
   observaciones: '',
+  estado: 'programado',
 }
 
 export default function Mantenimiento() {
@@ -82,7 +92,9 @@ export default function Mantenimiento() {
   const [loading, setLoading] = useState(true)
   const [mostrarModal, setMostrarModal] = useState(false)
   const [form, setForm] = useState(formVacio)
+  const [editando, setEditando] = useState<any | null>(null)
   const [guardando, setGuardando] = useState(false)
+  const [eliminando, setEliminando] = useState<number | null>(null)
   const [filtroEstado, setFiltroEstado] = useState('')
 
   const cargarDatos = () => {
@@ -96,16 +108,40 @@ export default function Mantenimiento() {
 
   useEffect(() => { cargarDatos() }, [])
 
+  const abrirEditar = (m: any) => {
+    setEditando(m)
+    setForm({
+      equipoId: m.equipo?.id ?? '',
+      tecnicoId: m.tecnico?.id ?? '',
+      fechaProgramada: m.fechaProgramada,
+      observaciones: m.observaciones || '',
+      estado: m.estado,
+    })
+    setMostrarModal(true)
+  }
+
   const handleGuardar = async () => {
     if (!form.equipoId || !form.fechaProgramada) return
     setGuardando(true)
-    await client.request(CREAR_MANTENIMIENTO, {
-      equipoId: parseInt(form.equipoId),
-      tecnicoId: form.tecnicoId ? parseInt(form.tecnicoId) : null,
-      fechaProgramada: form.fechaProgramada,
-      observaciones: form.observaciones,
-    })
+
+    if (editando) {
+      await client.request(ACTUALIZAR_MANTENIMIENTO, {
+        id: parseInt(editando.id),
+        estado: form.estado,
+        fechaRealizada: form.estado === 'completado' ? new Date().toISOString().split('T')[0] : null,
+        observaciones: form.observaciones,
+      })
+    } else {
+      await client.request(CREAR_MANTENIMIENTO, {
+        equipoId: parseInt(form.equipoId),
+        tecnicoId: form.tecnicoId ? parseInt(form.tecnicoId) : null,
+        fechaProgramada: form.fechaProgramada,
+        observaciones: form.observaciones,
+      })
+    }
+
     setForm(formVacio)
+    setEditando(null)
     setMostrarModal(false)
     setGuardando(false)
     cargarDatos()
@@ -120,9 +156,18 @@ export default function Mantenimiento() {
     cargarDatos()
   }
 
+  const handleEliminar = async (id: number) => {
+    if (!confirm('¿Seguro que deseas eliminar este mantenimiento?')) return
+    setEliminando(id)
+    await client.request(ELIMINAR_MANTENIMIENTO, { id })
+    setEliminando(null)
+    cargarDatos()
+  }
+
   const cerrarModal = () => {
     setMostrarModal(false)
     setForm(formVacio)
+    setEditando(null)
   }
 
   const filtrados = mantenimientos.filter((m) =>
@@ -133,7 +178,6 @@ export default function Mantenimiento() {
 
   return (
     <div className={cls.page}>
-      {/* Header */}
       <div className="flex items-start justify-between mb-8">
         <div>
           <h2 className={cls.pageTitle}>Mantenimiento preventivo</h2>
@@ -198,27 +242,41 @@ export default function Mantenimiento() {
                     </span>
                   </td>
                   <td className={cls.tableCell}>
-                    {m.estado === 'programado' && (
-                      <div className="flex gap-2">
+                    <div className="flex gap-1">
+                      {m.estado === 'programado' && (
                         <button
-                          className="text-xs text-blue-500 hover:text-blue-700"
-                          onClick={() => handleCambiarEstado(m.id, 'en_proceso')}
+                          onClick={() => handleCambiarEstado(parseInt(m.id), 'en_proceso')}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                          title="Iniciar"
                         >
-                          Iniciar
+                          <PlayCircle size={15} />
                         </button>
-                      </div>
-                    )}
-                    {m.estado === 'en_proceso' && (
+                      )}
+                      {m.estado === 'en_proceso' && (
+                        <button
+                          onClick={() => handleCambiarEstado(parseInt(m.id), 'completado')}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-green-500 hover:bg-green-50 transition-colors"
+                          title="Completar"
+                        >
+                          <CheckCircle size={15} />
+                        </button>
+                      )}
                       <button
-                        className="text-xs text-green-500 hover:text-green-700"
-                        onClick={() => handleCambiarEstado(m.id, 'completado')}
+                        onClick={() => abrirEditar(m)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                        title="Editar"
                       >
-                        Completar
+                        <Pencil size={15} />
                       </button>
-                    )}
-                    {m.estado === 'completado' && (
-                      <span className="text-xs text-gray-300">Finalizado</span>
-                    )}
+                      <button
+                        onClick={() => handleEliminar(parseInt(m.id))}
+                        disabled={eliminando === parseInt(m.id)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Eliminar"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
@@ -236,7 +294,9 @@ export default function Mantenimiento() {
         >
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-gray-800 font-medium">Programar mantenimiento</h3>
+              <h3 className="text-gray-800 font-medium">
+                {editando ? 'Editar mantenimiento' : 'Programar mantenimiento'}
+              </h3>
               <button onClick={cerrarModal} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
             </div>
 
@@ -247,11 +307,10 @@ export default function Mantenimiento() {
                   className={cls.input}
                   value={form.equipoId}
                   onChange={(e) => setForm({ ...form, equipoId: e.target.value })}
+                  disabled={!!editando}
                 >
                   <option value="">Seleccionar...</option>
-                  {equipos.map((e: any) => (
-                    <option key={e.id} value={e.id}>{e.nombre}</option>
-                  ))}
+                  {equipos.map((e: any) => <option key={e.id} value={e.id}>{e.nombre}</option>)}
                 </select>
               </div>
               <div>
@@ -262,9 +321,7 @@ export default function Mantenimiento() {
                   onChange={(e) => setForm({ ...form, tecnicoId: e.target.value })}
                 >
                   <option value="">Sin asignar</option>
-                  {usuarios.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.nombre}</option>
-                  ))}
+                  {usuarios.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
                 </select>
               </div>
               <div>
@@ -274,8 +331,24 @@ export default function Mantenimiento() {
                   className={cls.input}
                   value={form.fechaProgramada}
                   onChange={(e) => setForm({ ...form, fechaProgramada: e.target.value })}
+                  disabled={!!editando}
                 />
               </div>
+              {editando && (
+                <div>
+                  <label className={cls.label}>Estado</label>
+                  <select
+                    className={cls.input}
+                    value={form.estado}
+                    onChange={(e) => setForm({ ...form, estado: e.target.value })}
+                  >
+                    <option value="programado">Programado</option>
+                    <option value="en_proceso">En proceso</option>
+                    <option value="completado">Completado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                </div>
+              )}
               <div className="col-span-2">
                 <label className={cls.label}>Observaciones</label>
                 <textarea
@@ -290,7 +363,7 @@ export default function Mantenimiento() {
 
             <div className="flex gap-3 mt-6">
               <button className={cls.btnPrimary} onClick={handleGuardar} disabled={guardando}>
-                {guardando ? 'Guardando...' : 'Programar'}
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Programar'}
               </button>
               <button className={cls.btnSecondary} onClick={cerrarModal}>Cancelar</button>
             </div>
